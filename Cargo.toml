@@ -1,6 +1,9 @@
 [package]
-name = "antBehaviour"
+name = "ant_behaviour"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bevy = "0.15.0"
+bevy_pancam = "0.16.0"
+rand = "0.8.5"
