@@ -1,9 +1,9 @@
 use ant_behaviour::{
     camera::{CameraPlugin, FocusableEntity},
     grid::{Grid, GridEntity, GridPlugin},
-    utils::{square, window_to_world, ViewCone},
-    ANT_SPEED, ANT_VIEW_ANGLE, ANT_VIEW_DISTANCE, DEBUG_ANT_VIEW_COLOR_ALERT,
-    DEBUG_ANT_VIEW_RADIUS_COLOR, DEGREES_90, GRID_AREA_SIZE, GRID_RESOLUTION,
+    utils::{window_to_world, ViewCone},
+    ANT_VIEW_ANGLE, ANT_VIEW_DISTANCE, DEBUG_ANT_VIEW_COLOR_ALERT, DEBUG_ANT_VIEW_RADIUS_COLOR,
+    DEGREES_90,
 };
 use bevy::{prelude::*, window::PrimaryWindow};
 
@@ -26,7 +26,7 @@ fn main() {
         .add_plugins(CameraPlugin)
         .add_plugins(GridPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, (draw))
+        .add_systems(Update, draw)
         .add_systems(Update, move_ant_system)
         .run();
 }

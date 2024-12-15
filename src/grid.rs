@@ -1,8 +1,4 @@
-use bevy::{
-    ecs::component::{ComponentId, Components},
-    prelude::*,
-    window::PrimaryWindow,
-};
+use bevy::{prelude::*, window::PrimaryWindow};
 
 use crate::{
     utils::window_to_world, ANT_VIEW_DISTANCE, DEBUG_GRID_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
