@@ -4,9 +4,9 @@ use crate::{
     camera::{FocusableEntity, FocusedEntity},
     grid::{Grid, GridEntity},
     utils::{window_to_world, ViewCone},
-    ANT_COUNT, ANT_NEST_POSITION, ANT_NEST_SIZE, ANT_ROTATION_SPEED, ANT_SIZE, ANT_SPEED,
-    ANT_VIEW_ANGLE, ANT_VIEW_DISTANCE, DEBUG_ANT_VIEW_COLOR, DEBUG_ANT_VIEW_COLOR_ALERT,
-    DEBUG_ANT_VIEW_RADIUS_COLOR,
+    ANT_COUNT, ANT_ROTATION_SPEED, ANT_SIZE, ANT_SPEED, ANT_VIEW_ANGLE, ANT_VIEW_DISTANCE,
+    DEBUG_ANT_VIEW_COLOR, DEBUG_ANT_VIEW_COLOR_ALERT, DEBUG_ANT_VIEW_RADIUS_COLOR, NEST_COLOR,
+    NEST_POSITION, NEST_SIZE, PHEROMONE_DECAY,
 };
 
 pub struct AntPlugin;
@@ -17,7 +17,9 @@ impl Plugin for AntPlugin {
             .add_systems(Startup, spawn_ants)
             .add_systems(Update, move_ants)
             .add_systems(Update, check_mouse)
-            .add_systems(Update, ant_focused);
+            .add_systems(Update, ant_focused)
+            .add_systems(Update, draw_nest)
+            .add_systems(Update, ant_sees_other_ant);
     }
 }
 
@@ -27,6 +29,8 @@ pub struct AntSettings {
     pub view_angle: f32,
     pub speed: f32,
     pub n_ants: usize,
+    pub nest_size: f32,
+    pub nest_position: Vec2,
 }
 
 impl Default for AntSettings {
@@ -36,6 +40,8 @@ impl Default for AntSettings {
             view_angle: ANT_VIEW_ANGLE,
             speed: ANT_SPEED,
             n_ants: ANT_COUNT,
+            nest_size: NEST_SIZE,
+            nest_position: NEST_POSITION.into(),
         }
     }
 }
@@ -45,6 +51,26 @@ pub enum DesiredTarget {
     PHEROMONE,
     FOOD,
     NOTHING,
+}
+
+pub enum Pheromones {
+    LookingForFood,
+    LookingForHome,
+}
+
+impl Pheromones {
+    pub fn decay(&self, pheromone: f32) -> f32 {
+        match self {
+            _ => pheromone * PHEROMONE_DECAY,
+        }
+    }
+
+    pub fn get_color(&self) -> [f32; 4] {
+        match self {
+            Pheromones::LookingForFood => [1.0, 0.0, 0.0, 1.0],
+            Pheromones::LookingForHome => [0.0, 0.0, 1.0, 1.0],
+        }
+    }
 }
 
 #[derive(Debug, Component)]
@@ -112,10 +138,10 @@ fn spawn_ants(
 
     for _ in 0..ant_settings.n_ants {
         let angle = rand::random::<f32>() * std::f32::consts::TAU;
-        let distance = rand::random::<f32>() * ANT_NEST_SIZE;
+        let distance = rand::random::<f32>() * NEST_SIZE;
         let translation = Vec3::new(
-            ANT_NEST_POSITION.0 + distance * angle.cos(),
-            ANT_NEST_POSITION.1 + distance * angle.sin(),
+            NEST_POSITION.0 + distance * angle.cos(),
+            NEST_POSITION.1 + distance * angle.sin(),
             0.1,
         );
         let rotation = Quat::from_rotation_z(rand::random::<f32>() * std::f32::consts::TAU);
@@ -259,6 +285,7 @@ fn ant_focused(
         }
     }
 }
+
 fn check_mouse(
     mut ants: Query<(&Transform, &mut Ant), With<Ant>>,
     windows: Query<&Window, With<PrimaryWindow>>,
@@ -320,4 +347,13 @@ fn check_mouse(
             }
         }
     }
+}
+
+fn draw_nest(mut gizmos: Gizmos, ant_settings: Res<AntSettings>) {
+    // Draw the nest
+    gizmos.circle_2d(
+        ant_settings.nest_position,
+        ant_settings.nest_size,
+        LinearRgba::from_f32_array(NEST_COLOR),
+    );
 }
