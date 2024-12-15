@@ -1,8 +1,9 @@
 use ant_behaviour::{
     camera::{CameraPlugin, FocusableEntity},
-    utils::{window_to_world, ViewCone},
+    grid::{Grid, GridEntity, GridPlugin},
+    utils::{square, window_to_world, ViewCone},
     ANT_SPEED, ANT_VIEW_ANGLE, ANT_VIEW_DISTANCE, DEBUG_ANT_VIEW_COLOR_ALERT,
-    DEBUG_ANT_VIEW_RADIUS_COLOR,
+    DEBUG_ANT_VIEW_RADIUS_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
 };
 use bevy::{prelude::*, window::PrimaryWindow};
 
@@ -23,8 +24,10 @@ fn main() {
         )
         .init_resource::<AntsSettings>()
         .add_plugins(CameraPlugin)
+        .add_plugins(GridPlugin)
         .add_systems(Startup, setup)
-        .add_systems(Update, (draw_grid, move_ant_system))
+        .add_systems(Update, (draw))
+        .add_systems(Update, move_ant_system)
         .run();
 }
 
@@ -48,23 +51,18 @@ impl Default for AntsSettings {
     }
 }
 
-#[derive(Resource)]
-struct Grid {
-    size: UVec2,
-    cell_size: Vec2,
-    items: Vec<Vec<Entity>>,
-}
-
 #[derive(Component)]
 struct AntMovementTimer(Timer);
 
 fn move_ant_system(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut AntMovementTimer), With<Ant>>,
+    mut query: Query<(&mut Transform, &mut AntMovementTimer, Entity), With<Ant>>,
+    mut grid: ResMut<Grid>,
 ) {
-    for (mut transform, mut timer) in query.iter_mut() {
+    for (mut transform, mut timer, entity) in query.iter_mut() {
         // Update the timer
         timer.0.tick(time.delta());
+        let initial_position = transform.translation.truncate();
 
         // Check if moving up or down
         let direction = if timer.0.elapsed_secs() < 1.0 {
@@ -74,7 +72,7 @@ fn move_ant_system(
         };
 
         // Move the ant
-        transform.translation.y += direction * 100.0 * time.delta_secs();
+        transform.translation.y += direction * 300.0 * time.delta_secs();
 
         // Reset the timer after 2 seconds (1 second up + 1 second down)
         if timer.0.elapsed_secs() >= 2.0 {
@@ -83,21 +81,24 @@ fn move_ant_system(
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, grid: ResMut<Grid>) {
     let texture_handle = asset_server.load("ant.png");
+
+    let pos = Vec3::new(115.0, 15.0, 0.1);
     commands.spawn((
         Sprite {
             image: texture_handle,
             ..Default::default()
         },
-        Transform::from_translation(Vec3::new(0., 0., 0.1)),
+        Transform::from_translation(pos),
         Ant,
-        AntMovementTimer(Timer::from_seconds(2.0, TimerMode::Repeating)),
+        AntMovementTimer(Timer::from_seconds(10.0, TimerMode::Repeating)),
         FocusableEntity::default(),
+        GridEntity::new(grid.get_grid_pos(pos.truncate())),
     ));
 }
 
-fn draw_grid(
+fn draw(
     window_query: Query<&Window, With<PrimaryWindow>>,
     camera_transform_query: Query<&Transform, With<Camera2d>>,
     mut gizmos: Gizmos,
@@ -107,18 +108,6 @@ fn draw_grid(
 ) {
     let window = window_query.single();
     let camera_transform = camera_transform_query.single();
-
-    gizmos
-        .grid_2d(
-            Isometry2d {
-                translation: Vec2::splat(0.),
-                ..Default::default()
-            },
-            UVec2::splat(10),
-            Vec2::splat(40.),
-            LinearRgba::gray(0.05),
-        )
-        .outer_edges();
 
     let button_pressed = mouse_button.pressed(MouseButton::Left);
     for ant in ants.iter() {

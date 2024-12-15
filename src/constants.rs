@@ -1,8 +1,8 @@
 use std::f64::consts::PI;
 
-pub const SIM_WIDTH: f32 = 1000.0;
-pub const SIM_HEIGHT: f32 = 1000.0;
 pub const GRID_RESOLUTION: f32 = 100.0;
+pub const GRID_AREA_SIZE: f32 = 1000.0;
+pub const DEBUG_GRID_COLOR: [f32; 4] = [0.5, 0.5, 0.5, 0.5];
 
 pub const CAMERA_MAX_ZOOM: f32 = 0.5;
 pub const CAMERA_MIN_ZOOM: f32 = 5.0;

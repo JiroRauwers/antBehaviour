@@ -1,6 +1,6 @@
 use bevy::{
     color::{Color, ColorToComponents, LinearRgba},
-    math::{Mat2, Vec2, Vec3},
+    math::{Mat2, Vec2},
     prelude::{Gizmos, Transform},
     window::Window,
 };
@@ -130,4 +130,11 @@ pub fn window_to_world(
     let world_position = scaled_cursor + camera_transform.translation.truncate();
 
     world_position
+}
+
+pub fn square<T>(x: T) -> T
+where
+    T: std::ops::Mul<Output = T> + Copy,
+{
+    x * x
 }

@@ -1,9 +1,4 @@
-use bevy::{
-    ecs::query::{self, QueryData},
-    input::mouse::MouseWheel,
-    prelude::*,
-    window::PrimaryWindow,
-};
+use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
 
 use crate::{utils::window_to_world, CAMERA_FOCUS_RANGE, CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM};
 
@@ -104,10 +99,6 @@ fn zoom_camera_system(
         .scale
         .y
         .clamp(CAMERA_MAX_ZOOM, CAMERA_MIN_ZOOM);
-
-    if camera_transform.scale.x == CAMERA_MIN_ZOOM || camera_transform.scale.x == CAMERA_MAX_ZOOM {
-        return;
-    }
 
     // Handle mouse scroll zoom (toward cursor)
     if let Some(cursor_screen_pos) = window.cursor_position() {
