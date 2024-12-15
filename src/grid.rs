@@ -174,7 +174,11 @@ impl Grid {
         cells
     }
 
-    pub fn get_cells_in_area_from_world(&self, world_pos: Vec2, radius: f32) -> Vec<UVec2> {
+    pub fn get_cells_in_area_from_world(
+        &self,
+        world_pos: Vec2,
+        radius: f32,
+    ) -> Vec<(UVec2, Vec<(GridEntity, Entity)>)> {
         let mut cells = Vec::new();
         let min_x = ((world_pos.x - radius - self.offset.x) / self.cell_size.x).floor() as i32;
         let max_x = ((world_pos.x + radius - self.offset.x) / self.cell_size.x).ceil() as i32;
@@ -201,7 +205,10 @@ impl Grid {
                             .iter()
                             .any(|&corner| corner.distance(world_pos) <= radius)
                         {
-                            cells.push(pos);
+                            cells.push((
+                                pos,
+                                self.items[((pos.x) + (pos.y) * self.size.x) as usize].clone(),
+                            ));
                         }
                     }
                 }
@@ -241,11 +248,11 @@ fn draw_grid(
         // Draw cells around the entity
         let cells =
             grid.get_cells_in_area_from_world(transform.translation.truncate(), ANT_VIEW_DISTANCE);
-        for cell in cells {
+        for (pos, _items) in cells {
             grid.draw_cell(
                 &mut gizmos,
-                cell,
-                LinearRgba::from_f32_array([0.0, 1.0, 0.0, 1.0]),
+                pos,
+                LinearRgba::from_f32_array([0.0, 1.0, 0.0, 0.3]),
             );
         }
     }

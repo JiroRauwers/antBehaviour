@@ -15,7 +15,8 @@ pub const CAMERA_FOCUS_RANGE: f32 = 20.0;
 
 pub const SPRITE_ANT: &str = "ant.png";
 
-pub const ANT_VIEW_DISTANCE: f32 = 125.0;
+pub const ANT_VIEW_DISTANCE: f32 = 150.0;
+pub const ANT_SIZE: f32 = 25.0;
 pub const ANT_VIEW_ANGLE: f32 = (PI / 2.0) as f32;
 pub const ANT_SPEED: f32 = 1.0;
 

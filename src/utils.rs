@@ -87,13 +87,13 @@ impl ViewCone {
     }
 
     /// Check if a given point is inside the view cone
-    pub fn contains(&self, point: Vec2) -> bool {
+    pub fn contains(&self, point: Vec2, area: f32) -> bool {
         // Calculate the vector from the cone's center to the point
         let to_point = point - self.center;
 
-        // Check if the point is within the radius
-        if to_point.length_squared() > self.radius * self.radius {
-            return false; // Point is outside the radius
+        // Check if the point is within the radius plus the area
+        if to_point.length_squared() > (self.radius + area) * (self.radius + area) {
+            return false; // Point is outside the radius plus the area
         }
 
         // Normalize the direction vector
