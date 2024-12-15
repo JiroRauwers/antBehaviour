@@ -1,7 +1,8 @@
 use bevy::{prelude::*, window::PrimaryWindow};
 
 use crate::{
-    utils::window_to_world, ANT_VIEW_DISTANCE, DEBUG_GRID_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
+    camera::FocusedEntity, utils::window_to_world, ANT_VIEW_DISTANCE, DEBUG_ANT_VIEW_RADIUS_COLOR,
+    DEBUG_GRID_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
 };
 
 pub struct GridPlugin;
@@ -81,6 +82,13 @@ impl Grid {
             )
             .outer_edges();
     }
+
+    pub fn get_boundaries(&self) -> (Vec2, Vec2) {
+        let min = self.offset;
+        let max = self.offset + self.size.as_vec2() * self.cell_size;
+        (min, max)
+    }
+
     pub fn get_grid_pos(&self, world_pos: Vec2) -> UVec2 {
         // Adjust world position to grid-relative position
         let relative_pos = world_pos - self.offset;
@@ -135,29 +143,30 @@ impl Grid {
     }
 
     pub fn draw_cell<C>(&self, gizmos: &mut Gizmos, pos: UVec2, color: C)
-    where
-        C: Into<Color>,
-    {
-        let cell_position = self.offset
-            + Vec2::new(pos.x as f32, pos.y as f32) * self.cell_size
-            + (self.cell_size * 0.5);
-        gizmos.circle_2d(
-            Isometry2d {
-                translation: cell_position,
-                ..Default::default()
-            },
-            10.,
-            Color::srgb(1., 0., 0.),
-        );
-        gizmos.rect_2d(
-            Isometry2d {
-                translation: cell_position,
-                ..Default::default()
-            },
-            self.cell_size,
-            color.into(),
-        );
-    }
+        where
+            C: Into<Color> + Copy,
+        {
+            let cell_position = self.offset
+                + Vec2::new(pos.x as f32, pos.y as f32) * self.cell_size
+                + (self.cell_size * 0.5);
+            let color_converted = color.into();
+            gizmos.circle_2d(
+                Isometry2d {
+                    translation: cell_position,
+                    ..Default::default()
+                },
+                10.,
+                color_converted,
+            );
+            gizmos.rect_2d(
+                Isometry2d {
+                    translation: cell_position,
+                    ..Default::default()
+                },
+                self.cell_size,
+                color_converted,
+            );
+        }
 
     pub fn get_cells_in_area_from_grid(&self, grid_pos: UVec2, radius: f32) -> Vec<UVec2> {
         let radius = (radius / GRID_RESOLUTION).ceil() as u32;
@@ -224,7 +233,8 @@ fn draw_grid(
     mut last_cursor_pos: Local<UVec2>,
     windows: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<&Transform, With<Camera2d>>,
-    entity_query: Query<(&GridEntity, &Transform, Entity)>,
+    entity_query: Query<(&Transform, Entity), With<GridEntity>>,
+    focused_entity: Res<FocusedEntity>,
 ) {
     let window = windows.single();
     let camera_transform = camera_query.single(); // Immutable access to the camera transform
@@ -238,36 +248,25 @@ fn draw_grid(
             last_cursor_pos.clone_from(&grid_pos);
         }
     }
+    // Draw the last cursor position
     grid.draw_cell(
         &mut gizmos,
         *last_cursor_pos,
         LinearRgba::default().with_red(1.),
     );
 
-    for (_, transform, _) in entity_query.iter() {
-        // Draw cells around the entity
-        let cells =
-            grid.get_cells_in_area_from_world(transform.translation.truncate(), ANT_VIEW_DISTANCE);
-        for (pos, _items) in cells {
-            grid.draw_cell(
-                &mut gizmos,
-                pos,
-                LinearRgba::from_f32_array([0.0, 1.0, 0.0, 0.3]),
-            );
-        }
-    }
-    // Draw highlighted cells
-    for (i, entity) in grid.items.iter().enumerate() {
-        if entity.len() > 0 {
-            let x = (i % grid.size.x as usize) as u32;
-            let y = (i / grid.size.x as usize) as u32;
-
-            // Draw the cell the entity is in
-            grid.draw_cell(
-                &mut gizmos,
-                UVec2::new(x, y),
-                LinearRgba::from_f32_array([1.0, 0.0, 0.0, 1.0]),
-            );
+    for (transform, entity) in entity_query.iter() {
+        if focused_entity.0 == Some(entity) {
+            // Draw cells around the focused entity
+            let cells = grid
+                .get_cells_in_area_from_world(transform.translation.truncate(), ANT_VIEW_DISTANCE);
+            for (pos, _items) in cells {
+                grid.draw_cell(
+                    &mut gizmos,
+                    pos,
+                    LinearRgba::from_f32_array(DEBUG_ANT_VIEW_RADIUS_COLOR),
+                );
+            }
         }
     }
 }
@@ -286,7 +285,6 @@ fn update_grid_entities_self_pos(
 fn update_grid_entities_grid(mut grid: ResMut<Grid>, entities: Query<(&GridEntity, Entity)>) {
     for g_entity in entities.iter() {
         // check if the entity is in the grid
-
         if !grid.has_entity(g_entity.0.current_position, g_entity) {
             if !grid.has_entity(g_entity.0.last_position, g_entity) {
                 println!("Entity not in grid {:?}", g_entity.0);

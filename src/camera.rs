@@ -34,7 +34,13 @@ impl Plugin for CameraPlugin {
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(Camera2d::default());
+    commands.spawn((
+        Camera2d::default(),
+        Transform {
+            scale: Vec3::splat(CAMERA_MIN_ZOOM),
+            ..Default::default()
+        },
+    ));
 }
 
 /// System to pan the camera, taking scale into account
