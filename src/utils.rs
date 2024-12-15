@@ -10,6 +10,7 @@ use crate::DEBUG_ANT_VIEW_COLOR;
 #[derive(Debug, Clone, Copy)]
 pub struct ViewCone {
     center: Vec2,
+    rotation: f32,
     radius: f32,
     view_angle: f32,
     segments: usize,
@@ -18,7 +19,7 @@ pub struct ViewCone {
 }
 
 impl ViewCone {
-    pub fn new(center: Vec2, radius: f32, view_angle: f32) -> Self {
+    pub fn new(center: Vec2, radius: f32, view_angle: f32, rotation: f32) -> Self {
         Self {
             center,
             radius,
@@ -26,6 +27,7 @@ impl ViewCone {
             segments: 50,
             color: LinearRgba::from_f32_array(DEBUG_ANT_VIEW_COLOR).into(),
             direction: Vec2::Y,
+            rotation,
         }
     }
     pub fn color<C>(&mut self, color: C) -> &Self
@@ -51,13 +53,13 @@ impl ViewCone {
         // Calculate step size for the arc
         let step = self.view_angle / self.segments as f32;
 
-        // Calculate start and end directions
-        let start_direction = Mat2::from_angle(-half_angle) * self.direction;
+        // Calculate start and end directions with rotation
+        let start_direction = Mat2::from_angle(self.rotation - half_angle) * self.direction;
 
         // Draw the arc
         let mut prev_point = self.center + self.radius * start_direction;
         for i in 1..=self.segments {
-            let angle = -half_angle + i as f32 * step;
+            let angle = self.rotation - half_angle + i as f32 * step;
             let rotated_dir = Mat2::from_angle(angle) * self.direction;
             let next_point = self.center + self.radius * rotated_dir;
 
@@ -68,15 +70,20 @@ impl ViewCone {
         }
 
         // Draw lines from the center to the start and end of the arc
-        let start_point =
-            self.center + self.radius * Mat2::from_angle(-half_angle) * self.direction;
-        let end_point = self.center + self.radius * Mat2::from_angle(half_angle) * self.direction;
+        let start_point = self.center
+            + self.radius * Mat2::from_angle(self.rotation - half_angle) * self.direction;
+        let end_point = self.center
+            + self.radius * Mat2::from_angle(self.rotation + half_angle) * self.direction;
 
         gizmos.line_2d(self.center, start_point, self.color); // Left edge
         gizmos.line_2d(self.center, end_point, self.color); // Right edge
 
         // draw line from center to direction
-        gizmos.line_2d(self.center, self.center + self.direction * 50., self.color);
+        gizmos.line_2d(
+            self.center,
+            self.center + Mat2::from_angle(self.rotation) * self.direction * 50.,
+            self.color,
+        );
     }
 
     /// Check if a given point is inside the view cone
@@ -89,19 +96,14 @@ impl ViewCone {
             return false; // Point is outside the radius
         }
 
-        // Calculate the angle of the point relative to the positive X-axis
-        let point_angle = to_point.y.atan2(to_point.x);
+        // Normalize the direction vector
+        let direction_norm = Mat2::from_angle(self.rotation) * self.direction;
 
-        // Calculate the angle of the cone's direction relative to the positive X-axis
-        let cone_angle = self.direction.y.atan2(self.direction.x);
-
-        // Normalize the angle difference to [-PI, PI]
-        let angle_diff = (point_angle - cone_angle + std::f32::consts::PI)
-            % (2.0 * std::f32::consts::PI)
-            - std::f32::consts::PI;
+        // Calculate the angle between the direction and the point
+        let angle_to_point = direction_norm.angle_to(to_point);
 
         // Check if the point's angle is within the cone's view angle
-        angle_diff.abs() <= self.view_angle / 2.0
+        angle_to_point.abs() <= self.view_angle / 2.0
     }
 }
 

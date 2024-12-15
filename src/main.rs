@@ -3,7 +3,7 @@ use ant_behaviour::{
     grid::{Grid, GridEntity, GridPlugin},
     utils::{square, window_to_world, ViewCone},
     ANT_SPEED, ANT_VIEW_ANGLE, ANT_VIEW_DISTANCE, DEBUG_ANT_VIEW_COLOR_ALERT,
-    DEBUG_ANT_VIEW_RADIUS_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
+    DEBUG_ANT_VIEW_RADIUS_COLOR, DEGREES_90, GRID_AREA_SIZE, GRID_RESOLUTION,
 };
 use bevy::{prelude::*, window::PrimaryWindow};
 
@@ -56,13 +56,12 @@ struct AntMovementTimer(Timer);
 
 fn move_ant_system(
     time: Res<Time>,
-    mut query: Query<(&mut Transform, &mut AntMovementTimer, Entity), With<Ant>>,
-    mut grid: ResMut<Grid>,
+    mut query: Query<(&mut Transform, &mut AntMovementTimer), With<Ant>>,
 ) {
-    for (mut transform, mut timer, entity) in query.iter_mut() {
+    for (mut transform, mut timer) in query.iter_mut() {
         // Update the timer
         timer.0.tick(time.delta());
-        let initial_position = transform.translation.truncate();
+        // let initial_position = transform.translation.truncate();
 
         // Check if moving up or down
         let direction = if timer.0.elapsed_secs() < 1.0 {
@@ -90,7 +89,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, grid: ResMut<Gr
             image: texture_handle,
             ..Default::default()
         },
-        Transform::from_translation(pos),
+        Transform::from_translation(pos).with_rotation(Quat::from_rotation_z(DEGREES_90)),
         Ant,
         AntMovementTimer(Timer::from_seconds(10.0, TimerMode::Repeating)),
         FocusableEntity::default(),
@@ -118,10 +117,12 @@ fn draw(
             LinearRgba::from_f32_array(DEBUG_ANT_VIEW_RADIUS_COLOR),
         );
 
+        let ant_rotation = ant.rotation.to_euler(EulerRot::XYZ).2;
         let mut view_cone = ViewCone::new(
             ant.translation.truncate(),
             ants_settings.view_distance,
             ants_settings.view_angle,
+            ant_rotation,
         );
 
         if let Some(cursor_position) = window.cursor_position() {

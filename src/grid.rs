@@ -4,7 +4,9 @@ use bevy::{
     window::PrimaryWindow,
 };
 
-use crate::{utils::window_to_world, DEBUG_GRID_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION};
+use crate::{
+    utils::window_to_world, ANT_VIEW_DISTANCE, DEBUG_GRID_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
+};
 
 pub struct GridPlugin;
 
@@ -160,6 +162,57 @@ impl Grid {
             color.into(),
         );
     }
+
+    pub fn get_cells_in_area_from_grid(&self, grid_pos: UVec2, radius: f32) -> Vec<UVec2> {
+        let radius = (radius / GRID_RESOLUTION).ceil() as u32;
+        let mut cells = Vec::new();
+
+        for y in (grid_pos.y.saturating_sub(radius))..=(grid_pos.y.saturating_add(radius)) {
+            for x in (grid_pos.x.saturating_sub(radius))..=(grid_pos.x.saturating_add(radius)) {
+                let pos = UVec2::new(x, y);
+                if pos.x < self.size.x && pos.y < self.size.y {
+                    cells.push(pos);
+                }
+            }
+        }
+        cells
+    }
+
+    pub fn get_cells_in_area_from_world(&self, world_pos: Vec2, radius: f32) -> Vec<UVec2> {
+        let mut cells = Vec::new();
+        let min_x = ((world_pos.x - radius - self.offset.x) / self.cell_size.x).floor() as i32;
+        let max_x = ((world_pos.x + radius - self.offset.x) / self.cell_size.x).ceil() as i32;
+        let min_y = ((world_pos.y - radius - self.offset.y) / self.cell_size.y).floor() as i32;
+        let max_y = ((world_pos.y + radius - self.offset.y) / self.cell_size.y).ceil() as i32;
+
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                if x >= 0 && y >= 0 {
+                    let pos = UVec2::new(x as u32, y as u32);
+                    if pos.x < self.size.x && pos.y < self.size.y {
+                        let cell_min =
+                            self.offset + Vec2::new(pos.x as f32, pos.y as f32) * self.cell_size;
+                        let cell_max = cell_min + self.cell_size;
+
+                        let corners = [
+                            cell_min,
+                            Vec2::new(cell_min.x, cell_max.y),
+                            Vec2::new(cell_max.x, cell_min.y),
+                            cell_max,
+                        ];
+
+                        if corners
+                            .iter()
+                            .any(|&corner| corner.distance(world_pos) <= radius)
+                        {
+                            cells.push(pos);
+                        }
+                    }
+                }
+            }
+        }
+        cells
+    }
 }
 
 fn draw_grid(
@@ -168,6 +221,7 @@ fn draw_grid(
     mut last_cursor_pos: Local<UVec2>,
     windows: Query<&Window, With<PrimaryWindow>>,
     camera_query: Query<&Transform, With<Camera2d>>,
+    entity_query: Query<(&GridEntity, &Transform, Entity)>,
 ) {
     let window = windows.single();
     let camera_transform = camera_query.single(); // Immutable access to the camera transform
@@ -187,12 +241,25 @@ fn draw_grid(
         LinearRgba::default().with_red(1.),
     );
 
+    for (_, transform, _) in entity_query.iter() {
+        // Draw cells around the entity
+        let cells =
+            grid.get_cells_in_area_from_world(transform.translation.truncate(), ANT_VIEW_DISTANCE);
+        for cell in cells {
+            grid.draw_cell(
+                &mut gizmos,
+                cell,
+                LinearRgba::from_f32_array([0.0, 1.0, 0.0, 1.0]),
+            );
+        }
+    }
     // Draw highlighted cells
-    for (i, entities) in grid.items.iter().enumerate() {
-        if entities.len() > 0 {
+    for (i, entity) in grid.items.iter().enumerate() {
+        if entity.len() > 0 {
             let x = (i % grid.size.x as usize) as u32;
             let y = (i / grid.size.x as usize) as u32;
 
+            // Draw the cell the entity is in
             grid.draw_cell(
                 &mut gizmos,
                 UVec2::new(x, y),

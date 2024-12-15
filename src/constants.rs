@@ -1,5 +1,10 @@
 use std::f64::consts::PI;
 
+pub const DEGREES_90: f32 = (PI as f32) / 2.0;
+pub const DEGREES_180: f32 = PI as f32;
+pub const DEGREES_270: f32 = (PI as f32) * 1.5;
+pub const DEGREES_360: f32 = (PI as f32) * 2.0;
+
 pub const GRID_RESOLUTION: f32 = 100.0;
 pub const GRID_AREA_SIZE: f32 = 1000.0;
 pub const DEBUG_GRID_COLOR: [f32; 4] = [0.5, 0.5, 0.5, 0.5];
@@ -10,7 +15,7 @@ pub const CAMERA_FOCUS_RANGE: f32 = 20.0;
 
 pub const SPRITE_ANT: &str = "ant.png";
 
-pub const ANT_VIEW_DISTANCE: f32 = 100.0;
+pub const ANT_VIEW_DISTANCE: f32 = 125.0;
 pub const ANT_VIEW_ANGLE: f32 = (PI / 2.0) as f32;
 pub const ANT_SPEED: f32 = 1.0;
 
