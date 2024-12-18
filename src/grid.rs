@@ -1,5 +1,3 @@
-use std::ops::ControlFlow;
-
 use bevy::{prelude::*, window::PrimaryWindow};
 use rayon::prelude::*;
 
@@ -256,9 +254,9 @@ impl Grid {
     ) -> Vec<(
         UVec2,
         (
-            Vec<(GridEntity, Entity)>,
-            Vec<(GridEntity, Entity)>,
-            Vec<(GridEntity, Entity)>,
+            Vec<(GridEntity, Entity)>, // Ants
+            Vec<(GridEntity, Entity)>, // Food
+            Vec<(GridEntity, Entity)>, // Pheromones
         ),
     )> {
         let mut cells = Vec::new();
@@ -367,18 +365,34 @@ fn update_grid_entities_self_pos(
 fn update_grid_entities_grid(mut grid: ResMut<Grid>, entities: Query<(&GridEntity, Entity)>) {
     for g_entity in entities.iter() {
         // check if the entity is in the grid
-        if !grid.has_entity(g_entity.0.current_position, g_entity) {
-            if !grid.has_entity(g_entity.0.last_position, g_entity) {
-                println!("Entity not in grid {:?}", g_entity.0);
-            } else {
-                grid.remove_from(g_entity.0.last_position, g_entity);
-            }
+        match grid.has_entity(g_entity.0.current_position, GridEntityType::Ant, g_entity) {
+            Ok(false) => {
+                match grid.has_entity(g_entity.0.last_position, GridEntityType::Ant, g_entity) {
+                    Ok(false) => {
+                        println!("Entity not in grid {:?}", g_entity.0);
+                    }
+                    Ok(true) => {
+                        if let Err(_) = grid.remove_from(
+                            GridEntityType::Ant,
+                            g_entity.0.last_position,
+                            g_entity,
+                        ) {
+                            println!("Error removing entity from grid");
+                        }
+                    }
+                    Err(_) => {
+                        println!("Error checking entity in grid");
+                    }
+                }
 
-            if let Err(_) = grid.add_entity(g_entity) {
-                println!("grid position out of bounds entity {:?}", g_entity);
-                // println!("Error adding entity to grid");
+                if let Err(_) = grid.add_entity(GridEntityType::Ant, g_entity) {
+                    println!("grid position out of bounds entity {:?}", g_entity);
+                }
             }
-            continue;
+            Ok(true) => {}
+            Err(_) => {
+                println!("Error checking entity in grid");
+            }
         }
     }
 }

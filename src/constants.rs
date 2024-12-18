@@ -19,7 +19,7 @@ pub const NEST_SIZE: f32 = 100.0;
 pub const NEST_POSITION: (f32, f32) = (0.0, 0.0);
 pub const NEST_COLOR: [f32; 4] = [1.0, 0.65, 0.0, 1.0];
 
-pub const ANT_COUNT: usize = 10000;
+pub const ANT_COUNT: usize = 100;
 pub const ANT_VIEW_DISTANCE: f32 = 150.0;
 pub const ANT_SIZE: f32 = 25.0;
 pub const ANT_VIEW_ANGLE: f32 = (PI / 2.0) as f32;

@@ -187,18 +187,21 @@ fn ant_sees_other_ant(
                 grid.get_cells_in_area_from_world(ant_position, ants_settings.view_distance);
             let _view_cone = ant.get_view_cone(ant_transform, &ants_settings);
 
-            for (_, entities) in cells_in_area {
-                for (_, entitie) in entities.iter() {
-                    if *entitie != ant_entity {
-                        if let Ok((other_ant_transform, _, _, _)) = ants.get(*entitie) {
-                            let _other_ant_position = other_ant_transform.translation.truncate();
-                            // if view_cone.contains(other_ant_position, ANT_SIZE / 2.) {
-                            //     // Ant sees another ant
-                            // }
+            cells_in_area
+                .into_iter()
+                .for_each(|(_, (ants_grid_entities, _, _))| {
+                    ants_grid_entities.into_iter().for_each(|(_, entitie)| {
+                        if entitie != ant_entity {
+                            if let Ok((other_ant_transform, _, _, _)) = ants.get(entitie) {
+                                let _other_ant_position =
+                                    other_ant_transform.translation.truncate();
+                                // if view_cone.contains(other_ant_position, ANT_SIZE / 2.) {
+                                //     // Ant sees another ant
+                                // }
+                            }
                         }
-                    }
-                }
-            }
+                    })
+                });
         });
 }
 
@@ -218,31 +221,39 @@ fn ant_focused(
                 grid.get_cells_in_area_from_world(ant_position, ants_settings.view_distance);
             let view_cone = ant.get_view_cone(transform, &ants_settings);
 
-            for (_, entities) in cells_in_area {
-                for (_, entitie) in entities.iter() {
-                    if *entitie != ant_entity {
-                        if let Ok((other_ant_transform, _, _)) = ants.get(*entitie) {
-                            let other_ant_position = other_ant_transform.translation.truncate();
-                            if view_cone.contains(other_ant_position, ANT_SIZE / 2.) {
-                                // Ant sees another ant
-                                // draw a redline beetween the two ants
-                                gizmos.line_2d(
-                                    ant_position,
-                                    other_ant_position,
-                                    LinearRgba::from_f32_array([0.0, 1.0, 0.0, 1.0]),
-                                );
-                            } else {
-                                //  draw a gray line
-                                gizmos.line_2d(
-                                    ant_position,
-                                    other_ant_position,
-                                    LinearRgba::from_f32_array([1.0, 0.0, 0.0, 1.0]),
-                                );
+            // (pos ,(ants, pheromones, food))
+            cells_in_area
+                .into_iter()
+                .for_each(|(grid_cells, (ants_grid_entities, _, _))| {
+                    grid.draw_cell(
+                        &mut gizmos,
+                        grid_cells,
+                        LinearRgba::from_f32_array([0.5, 0.5, 0.5, 0.04]),
+                    );
+                    ants_grid_entities.into_iter().for_each(|(_, entitie)| {
+                        if entitie != ant_entity {
+                            if let Ok((other_ant_transform, _, _)) = ants.get(entitie) {
+                                let other_ant_position = other_ant_transform.translation.truncate();
+                                if view_cone.contains(other_ant_position, ANT_SIZE / 2.) {
+                                    // Ant sees another ant
+                                    // draw a redline beetween the two ants
+                                    gizmos.line_2d(
+                                        ant_position,
+                                        other_ant_position,
+                                        LinearRgba::from_f32_array([0.0, 1.0, 0.0, 1.0]),
+                                    );
+                                } else {
+                                    //  draw a gray line
+                                    gizmos.line_2d(
+                                        ant_position,
+                                        other_ant_position,
+                                        LinearRgba::from_f32_array([1.0, 0.0, 0.0, 1.0]),
+                                    );
+                                }
                             }
                         }
-                    }
-                }
-            }
+                    })
+                });
         }
     }
 }
