@@ -1,4 +1,4 @@
-use bevy::{prelude::*, window::PrimaryWindow};
+use bevy::{ecs::batching::BatchingStrategy, prelude::*, window::PrimaryWindow};
 
 use crate::{
     camera::{FocusableEntity, FocusedEntity},
@@ -87,6 +87,15 @@ impl Ant {
         }
     }
 
+    pub fn get_view_cone(&self, transform: &Transform, settings: &AntSettings) -> ViewCone {
+        ViewCone::new(
+            transform.translation.truncate(),
+            settings.view_distance,
+            settings.view_angle,
+            transform.rotation.to_euler(EulerRot::XYZ).2,
+        )
+    }
+
     pub fn debug_view(
         &self,
         transform: &Transform,
@@ -136,9 +145,9 @@ fn spawn_ants(
 ) {
     let texture_handle = asset_server.load("ant.png");
 
-    for _ in 0..ant_settings.n_ants {
+    (0..ant_settings.n_ants).into_iter().for_each(|_| {
         let angle = rand::random::<f32>() * std::f32::consts::TAU;
-        let distance = rand::random::<f32>() * NEST_SIZE;
+        let distance = rand::random::<f32>() * NEST_SIZE * 1.6;
         let translation = Vec3::new(
             NEST_POSITION.0 + distance * angle.cos(),
             NEST_POSITION.1 + distance * angle.sin(),
@@ -159,33 +168,77 @@ fn spawn_ants(
             FocusableEntity::default(),
             GridEntity::new(grid.get_grid_pos(translation.truncate())),
         ));
-    }
+    });
 }
 
 fn ant_sees_other_ant(
-    ants: Query<(&Transform, &GridEntity, Entity), With<Ant>>,
+    ants: Query<(&Transform, Entity, &Ant, &GridEntity), With<Ant>>,
     ants_settings: Res<AntSettings>,
     grid: Res<Grid>,
 ) {
-    for (ant_transform, _, ant_entity) in ants.iter() {
-        let ant_position = ant_transform.translation.truncate();
-        let cells_in_area =
-            grid.get_cells_in_area_from_world(ant_position, ants_settings.view_distance);
-        let view_cone = ViewCone::new(
-            ant_position,
-            ants_settings.view_distance,
-            ants_settings.view_angle,
-            ant_transform.rotation.to_euler(EulerRot::XYZ).2,
-        );
+    ants.par_iter()
+        .batching_strategy(BatchingStrategy {
+            batch_size_limits: 1..500,
+            ..Default::default()
+        })
+        .for_each(|(ant_transform, ant_entity, ant, _)| {
+            let ant_position = ant_transform.translation.truncate();
+            let cells_in_area =
+                grid.get_cells_in_area_from_world(ant_position, ants_settings.view_distance);
+            let _view_cone = ant.get_view_cone(ant_transform, &ants_settings);
 
-        for (_, entities) in cells_in_area {
-            for (_, entitie) in entities.iter() {
-                if *entitie != ant_entity {
-                    if let Ok((other_ant_transform, _, _)) = ants.get(*entitie) {
-                        let other_ant_position = other_ant_transform.translation.truncate();
-                        if view_cone.contains(other_ant_position, ANT_SIZE / 2.) {
-                            // Ant sees another ant
-                            println!("ant: {} sees ant {}", ant_entity.index(), entitie.index());
+            for (_, entities) in cells_in_area {
+                for (_, entitie) in entities.iter() {
+                    if *entitie != ant_entity {
+                        if let Ok((other_ant_transform, _, _, _)) = ants.get(*entitie) {
+                            let _other_ant_position = other_ant_transform.translation.truncate();
+                            // if view_cone.contains(other_ant_position, ANT_SIZE / 2.) {
+                            //     // Ant sees another ant
+                            // }
+                        }
+                    }
+                }
+            }
+        });
+}
+
+fn ant_focused(
+    ants: Query<(&Transform, &Ant, Entity), With<Ant>>,
+    focused_entity: Res<FocusedEntity>,
+    mut gizmos: Gizmos,
+    grid: Res<Grid>,
+    ants_settings: Res<AntSettings>,
+) {
+    if let Some(focused_entity) = focused_entity.0 {
+        if let Ok((transform, ant, ant_entity)) = ants.get(focused_entity) {
+            ant.debug_view(transform, &mut gizmos, &ants_settings);
+
+            let ant_position = transform.translation.truncate();
+            let cells_in_area =
+                grid.get_cells_in_area_from_world(ant_position, ants_settings.view_distance);
+            let view_cone = ant.get_view_cone(transform, &ants_settings);
+
+            for (_, entities) in cells_in_area {
+                for (_, entitie) in entities.iter() {
+                    if *entitie != ant_entity {
+                        if let Ok((other_ant_transform, _, _)) = ants.get(*entitie) {
+                            let other_ant_position = other_ant_transform.translation.truncate();
+                            if view_cone.contains(other_ant_position, ANT_SIZE / 2.) {
+                                // Ant sees another ant
+                                // draw a redline beetween the two ants
+                                gizmos.line_2d(
+                                    ant_position,
+                                    other_ant_position,
+                                    LinearRgba::from_f32_array([0.0, 1.0, 0.0, 1.0]),
+                                );
+                            } else {
+                                //  draw a gray line
+                                gizmos.line_2d(
+                                    ant_position,
+                                    other_ant_position,
+                                    LinearRgba::from_f32_array([1.0, 0.0, 0.0, 1.0]),
+                                );
+                            }
                         }
                     }
                 }
@@ -193,97 +246,92 @@ fn ant_sees_other_ant(
         }
     }
 }
-
 fn move_ants(
     mut ants: Query<(&mut Transform, &mut Ant), With<Ant>>,
     ants_settings: Res<AntSettings>,
     time: Res<Time>,
     grid: Res<Grid>,
 ) {
-    for (mut ant_transform, mut ant) in ants.iter_mut() {
-        let ant_position = ant_transform.translation.truncate();
-        let (min, max) = grid.get_boundaries();
+    let (min, max) = grid.get_boundaries();
+    let border_threshold = ants_settings.view_distance * 1.5;
+    let delta_secs = time.delta_secs();
 
-        // If the ant has no specific target, it will randomly steer
-        if let DesiredTarget::NOTHING = ant.desired_target {
-            // Steer away from borders if close enough
-            let border_threshold = ants_settings.view_distance * 1.5;
-            if ant_position.x < min.x + border_threshold {
-                ant.desired_direction.x = ant.desired_direction.x + 1.0;
-                // add some randomness to the y direction
-            } else if ant_position.x > max.x - border_threshold {
-                ant.desired_direction.x = ant.desired_direction.x - 1.0;
+    ants.par_iter_mut()
+        .batching_strategy(BatchingStrategy {
+            batch_size_limits: 1..500,
+            ..Default::default()
+        })
+        .for_each(|(mut ant_transform, mut ant)| {
+            let ant_position = ant_transform.translation.truncate();
+
+            // If the ant has no specific target, it will randomly steer
+            if let DesiredTarget::NOTHING = ant.desired_target {
+                // Steer away from borders if close enough
+                if ant_position.x < min.x + border_threshold {
+                    ant.desired_direction.x = ant.desired_direction.x + 1.0;
+                } else if ant_position.x > max.x - border_threshold {
+                    ant.desired_direction.x = ant.desired_direction.x - 1.0;
+                }
+                ant.desired_direction.y =
+                    ant.desired_direction.y + (rand::random::<f32>() - 0.5) * 0.4;
+                if ant_position.y < min.y + border_threshold {
+                    ant.desired_direction.y = ant.desired_direction.y + 1.0;
+                } else if ant_position.y > max.y - border_threshold {
+                    ant.desired_direction.y = ant.desired_direction.y - 1.0;
+                }
+                ant.desired_direction.x =
+                    ant.desired_direction.x + (rand::random::<f32>() - 0.5) * 0.4;
+                ant.desired_direction = ant.desired_direction.normalize_or_zero();
             }
-            // add some randomness to the y direction
-            ant.desired_direction.y = ant.desired_direction.y + (rand::random::<f32>() - 0.5) * 0.4;
-            if ant_position.y < min.y + border_threshold {
-                ant.desired_direction.y = ant.desired_direction.y + 1.0;
-            } else if ant_position.y > max.y - border_threshold {
-                ant.desired_direction.y = ant.desired_direction.y - 1.0;
-            }
-            // add some randomness to the x direction
-            ant.desired_direction.x = ant.desired_direction.x + (rand::random::<f32>() - 0.5) * 0.4;
-            ant.desired_direction = ant.desired_direction.normalize_or_zero();
-        }
 
-        // Current forward direction of the ant
-        let current_direction = ant_transform.rotation * Vec3::Y;
+            // Current forward direction of the ant
+            let current_direction = ant_transform.rotation * Vec3::Y;
 
-        // Calculate the angle between the current direction and the desired direction
-        let angle = current_direction.angle_between(ant.desired_direction.extend(0.0));
+            // Calculate the angle between the current direction and the desired direction
+            let angle = current_direction.angle_between(ant.desired_direction.extend(0.0));
 
-        // Calculate the rotation step based on the ant's rotation speed and the elapsed time
-        let rotation_speed = if let DesiredTarget::FOOD = ant.desired_target {
-            ANT_ROTATION_SPEED * 3.0
-        } else {
-            let mut speed = ANT_ROTATION_SPEED;
-            let border_threshold = ants_settings.view_distance;
-            if ant_position.x < min.x + border_threshold
-                || ant_position.x > max.x - border_threshold
-                || ant_position.y < min.y + border_threshold
-                || ant_position.y > max.y - border_threshold
-            {
-                speed *= 5.0; // Increase turning speed when steering from borders
-            }
-            speed
-        };
-        let rotation_step = rotation_speed * time.delta_secs();
+            // Calculate the rotation step based on the ant's rotation speed and the elapsed time
+            let rotation_speed = match ant.desired_target {
+                DesiredTarget::FOOD => ANT_ROTATION_SPEED * 3.0,
+                // case searching for pheromone
+                _ => match (
+                    ant_position.x < min.x + ants_settings.view_distance,
+                    ant_position.x > max.x - ants_settings.view_distance,
+                    ant_position.y < min.y + ants_settings.view_distance,
+                    ant_position.y > max.y - ants_settings.view_distance,
+                ) {
+                    (true, _, _, _) | (_, true, _, _) | (_, _, true, _) | (_, _, _, true) => {
+                        // Increase turning speed when steering from borders
+                        ANT_ROTATION_SPEED * 5.0
+                    }
+                    _ => ANT_ROTATION_SPEED,
+                },
+            };
+            let rotation_step = rotation_speed * delta_secs;
 
-        // Determine the new rotation
-        let new_rotation = if angle < rotation_step {
-            Quat::from_rotation_arc(current_direction, ant.desired_direction.extend(0.0))
-        } else {
-            Quat::from_rotation_arc(
-                current_direction,
-                current_direction.lerp(ant.desired_direction.extend(0.0), rotation_step / angle),
-            )
-        };
+            // Determine the new rotation
+            let new_rotation = if angle < rotation_step {
+                Quat::from_rotation_arc(current_direction, ant.desired_direction.extend(0.0))
+            } else {
+                Quat::from_rotation_arc(
+                    current_direction,
+                    current_direction
+                        .lerp(ant.desired_direction.extend(0.0), rotation_step / angle),
+                )
+            };
 
-        // Apply the new rotation to the ant
-        ant_transform.rotation = new_rotation * ant_transform.rotation;
+            // Apply the new rotation to the ant
+            ant_transform.rotation = new_rotation * ant_transform.rotation;
 
-        // Move the ant forward in the direction it is facing
-        let forward_movement =
-            ant_transform.rotation * Vec3::Y * ants_settings.speed * time.delta_secs();
-        ant_transform.translation += forward_movement;
+            // Move the ant forward in the direction it is facing
+            let forward_movement =
+                ant_transform.rotation * Vec3::Y * ants_settings.speed * delta_secs;
+            ant_transform.translation += forward_movement;
 
-        // Constrain the ant to the grid space
-        ant_transform.translation.x = ant_transform.translation.x.clamp(min.x, max.x);
-        ant_transform.translation.y = ant_transform.translation.y.clamp(min.y, max.y);
-    }
-}
-
-fn ant_focused(
-    ants: Query<(&Transform, &Ant), With<Ant>>,
-    focused_entity: Res<FocusedEntity>,
-    mut gizmos: Gizmos,
-    ants_settings: Res<AntSettings>,
-) {
-    if let Some(focused_entity) = focused_entity.0 {
-        if let Ok((transform, ant)) = ants.get(focused_entity) {
-            ant.debug_view(transform, &mut gizmos, &ants_settings);
-        }
-    }
+            // Constrain the ant to the grid space
+            ant_transform.translation.x = ant_transform.translation.x.clamp(min.x, max.x);
+            ant_transform.translation.y = ant_transform.translation.y.clamp(min.y, max.y);
+        });
 }
 
 fn check_mouse(

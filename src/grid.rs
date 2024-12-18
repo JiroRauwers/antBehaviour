@@ -1,8 +1,11 @@
+use std::ops::ControlFlow;
+
 use bevy::{prelude::*, window::PrimaryWindow};
+use rayon::prelude::*;
 
 use crate::{
-    camera::FocusedEntity, utils::window_to_world, ANT_VIEW_DISTANCE, DEBUG_ANT_VIEW_RADIUS_COLOR,
-    DEBUG_GRID_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
+    camera::FocusedEntity, ui::UiControls, utils::window_to_world, ANT_VIEW_DISTANCE,
+    DEBUG_ANT_VIEW_RADIUS_COLOR, DEBUG_GRID_COLOR, GRID_AREA_SIZE, GRID_RESOLUTION,
 };
 
 pub struct GridPlugin;
@@ -15,6 +18,13 @@ impl Plugin for GridPlugin {
             .add_systems(Update, update_grid_entities_self_pos);
         // .add_system(update_grid.system());
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GridEntityType {
+    Ant,
+    Food,
+    Pheromone,
 }
 
 #[derive(Component, Clone, Copy, Debug)]
@@ -43,10 +53,13 @@ impl Default for GridEntity {
 
 #[derive(Resource)]
 pub struct Grid {
-    size: UVec2,                           // Number of cells (width, height)
-    cell_size: Vec2,                       // Size of each cell
-    items: Vec<Vec<(GridEntity, Entity)>>, // Entities stored in each cell
-    offset: Vec2,                          // Offset to align the grid with (0, 0) at the center
+    size: UVec2,     // Number of cells (width, height)
+    cell_size: Vec2, // Size of each cell
+    // 2D array of cells, each containing lists of different entities
+    pheromones: Vec<Vec<(GridEntity, Entity)>>,
+    ants: Vec<Vec<(GridEntity, Entity)>>,
+    food: Vec<Vec<(GridEntity, Entity)>>,
+    offset: Vec2, // Offset to align the grid with (0, 0) at the center
 }
 
 impl Default for Grid {
@@ -61,7 +74,9 @@ impl Default for Grid {
         Self {
             size,
             cell_size,
-            items: vec![vec![]; num_cells], // Initialize with empty lists
+            ants: vec![vec![]; num_cells],
+            food: vec![vec![]; num_cells],
+            pheromones: vec![vec![]; num_cells],
             offset,
         }
     }
@@ -100,7 +115,11 @@ impl Grid {
         UVec2::new(x, y).clamp(UVec2::ZERO, self.size - 1)
     }
 
-    pub fn add_entity(&mut self, entity: (&GridEntity, Entity)) -> Result<(), ()> {
+    pub fn add_entity(
+        &mut self,
+        entity_type: GridEntityType,
+        entity: (&GridEntity, Entity),
+    ) -> Result<(), ()> {
         // Ensure indices are within bounds
         let curr_pos = entity.0.current_position;
         if curr_pos.x >= self.size.x || curr_pos.y >= self.size.y {
@@ -111,62 +130,109 @@ impl Grid {
         let index = ((curr_pos.x) + (curr_pos.y) * self.size.x) as usize;
 
         // Add the entity to the corresponding cell
-        self.items[index].push((*entity.0, entity.1));
+        match entity_type {
+            GridEntityType::Ant => self.ants[index].push((*entity.0, entity.1)),
+            GridEntityType::Food => self.food[index].push((*entity.0, entity.1)),
+            GridEntityType::Pheromone => self.pheromones[index].push((*entity.0, entity.1)),
+            #[allow(unreachable_patterns)]
+            _ => return Err(()),
+        }
         Ok(())
     }
-    pub fn lazy_remove(&mut self, entity: (&GridEntity, Entity)) {
-        for entities in self.items.iter_mut() {
-            if let Some(index) = entities.iter().position(|e| e.1 == entity.1) {
+    pub fn lazy_remove(
+        &mut self,
+        entity_type: GridEntityType,
+        entity: (&GridEntity, Entity),
+    ) -> Result<(), ()> {
+        let entity_id = entity.1;
+        let entity_type_vec = match entity_type {
+            GridEntityType::Ant => &mut self.ants,
+            GridEntityType::Food => &mut self.food,
+            GridEntityType::Pheromone => &mut self.pheromones,
+            #[allow(unreachable_patterns)]
+            _ => return Err(()),
+        };
+
+        entity_type_vec.par_iter_mut().for_each(|entities| {
+            if let Some(index) = entities.iter().position(|e| e.1 == entity_id) {
                 entities.remove(index);
-                return;
             }
-        }
+        });
+        Ok(())
     }
-    pub fn has_entity(&self, pos: UVec2, entity: (&GridEntity, Entity)) -> bool {
+    pub fn has_entity(
+        &self,
+        pos: UVec2,
+        entity_type: GridEntityType,
+        entity: (&GridEntity, Entity),
+    ) -> Result<bool, ()> {
         // Ensure indices are within bounds
         if pos.x >= self.size.x || pos.y >= self.size.y {
-            return false; // Out of bounds
+            return Ok(false); // Out of bounds
         }
 
         // Compute the flattened index
         let index = ((pos.x) + (pos.y) * self.size.x) as usize;
 
         // Check if the entity is in the corresponding cell
-        self.items[index].iter().any(|e| e.1 == entity.1)
+        match entity_type {
+            GridEntityType::Ant => Ok(self.ants[index].iter().any(|e| e.1 == entity.1)),
+            GridEntityType::Food => Ok(self.food[index].iter().any(|e| e.1 == entity.1)),
+            GridEntityType::Pheromone => Ok(self.pheromones[index].iter().any(|e| e.1 == entity.1)),
+            #[allow(unreachable_patterns)]
+            _ => return Err(()),
+        }
     }
-    pub fn remove_from(&mut self, pos: UVec2, entity: (&GridEntity, Entity)) {
+    pub fn remove_from(
+        &mut self,
+        entity_type: GridEntityType,
+        pos: UVec2,
+        entity: (&GridEntity, Entity),
+    ) -> Result<(), ()> {
         // Remove the entity from the corresponding cell
-        if self.has_entity(pos, entity) {
-            let index = ((pos.x) + (pos.y) * self.size.x) as usize;
-            self.items[index].retain(|e| e.1 != entity.1);
+        match self.has_entity(pos, entity_type, entity) {
+            Ok(true) => {
+                let index = ((pos.x) + (pos.y) * self.size.x) as usize;
+                match entity_type {
+                    GridEntityType::Ant => Ok(self.ants[index].retain(|e| e.1 != entity.1)),
+                    GridEntityType::Food => Ok(self.food[index].retain(|e| e.1 != entity.1)),
+                    GridEntityType::Pheromone => {
+                        Ok(self.pheromones[index].retain(|e| e.1 != entity.1))
+                    }
+                    #[allow(unreachable_patterns)]
+                    _ => return Err(()),
+                }
+            }
+            #[allow(unreachable_patterns)]
+            _ => return Err(()),
         }
     }
 
     pub fn draw_cell<C>(&self, gizmos: &mut Gizmos, pos: UVec2, color: C)
-        where
-            C: Into<Color> + Copy,
-        {
-            let cell_position = self.offset
-                + Vec2::new(pos.x as f32, pos.y as f32) * self.cell_size
-                + (self.cell_size * 0.5);
-            let color_converted = color.into();
-            gizmos.circle_2d(
-                Isometry2d {
-                    translation: cell_position,
-                    ..Default::default()
-                },
-                10.,
-                color_converted,
-            );
-            gizmos.rect_2d(
-                Isometry2d {
-                    translation: cell_position,
-                    ..Default::default()
-                },
-                self.cell_size,
-                color_converted,
-            );
-        }
+    where
+        C: Into<Color> + Copy,
+    {
+        let cell_position = self.offset
+            + Vec2::new(pos.x as f32, pos.y as f32) * self.cell_size
+            + (self.cell_size * 0.5);
+        let color_converted = color.into();
+        gizmos.circle_2d(
+            Isometry2d {
+                translation: cell_position,
+                ..Default::default()
+            },
+            10.,
+            color_converted,
+        );
+        gizmos.rect_2d(
+            Isometry2d {
+                translation: cell_position,
+                ..Default::default()
+            },
+            self.cell_size,
+            color_converted,
+        );
+    }
 
     pub fn get_cells_in_area_from_grid(&self, grid_pos: UVec2, radius: f32) -> Vec<UVec2> {
         let radius = (radius / GRID_RESOLUTION).ceil() as u32;
@@ -187,7 +253,14 @@ impl Grid {
         &self,
         world_pos: Vec2,
         radius: f32,
-    ) -> Vec<(UVec2, Vec<(GridEntity, Entity)>)> {
+    ) -> Vec<(
+        UVec2,
+        (
+            Vec<(GridEntity, Entity)>,
+            Vec<(GridEntity, Entity)>,
+            Vec<(GridEntity, Entity)>,
+        ),
+    )> {
         let mut cells = Vec::new();
         let min_x = ((world_pos.x - radius - self.offset.x) / self.cell_size.x).floor() as i32;
         let max_x = ((world_pos.x + radius - self.offset.x) / self.cell_size.x).ceil() as i32;
@@ -216,7 +289,12 @@ impl Grid {
                         {
                             cells.push((
                                 pos,
-                                self.items[((pos.x) + (pos.y) * self.size.x) as usize].clone(),
+                                (
+                                    self.ants[((pos.x) + (pos.y) * self.size.x) as usize].clone(),
+                                    self.food[((pos.x) + (pos.y) * self.size.x) as usize].clone(),
+                                    self.pheromones[((pos.x) + (pos.y) * self.size.x) as usize]
+                                        .clone(),
+                                ),
                             ));
                         }
                     }
@@ -235,7 +313,11 @@ fn draw_grid(
     camera_query: Query<&Transform, With<Camera2d>>,
     entity_query: Query<(&Transform, Entity), With<GridEntity>>,
     focused_entity: Res<FocusedEntity>,
+    ui_controlss: Res<UiControls>,
 ) {
+    if ui_controlss.show_grid == false {
+        return;
+    }
     let window = windows.single();
     let camera_transform = camera_query.single(); // Immutable access to the camera transform
 

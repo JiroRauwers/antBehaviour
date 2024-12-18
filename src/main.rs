@@ -1,4 +1,4 @@
-use ant_behaviour::{ant::AntPlugin, camera::CameraPlugin, grid::GridPlugin};
+use ant_behaviour::{ant::AntPlugin, camera::CameraPlugin, grid::GridPlugin, ui::UiPlugin};
 use bevy::prelude::*;
 
 fn main() {
@@ -16,7 +16,7 @@ fn main() {
                     ..default()
                 }),
         )
-        .add_plugins(CameraPlugin)
+        .add_plugins((CameraPlugin, UiPlugin))
         .add_plugins((GridPlugin, AntPlugin))
         .run();
 }
